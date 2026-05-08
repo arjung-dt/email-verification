@@ -9,6 +9,8 @@ exists: LIKELY_NO  → known disposable / throwaway provider
 exists: NO         → no MX records, OR a provider explicitly rejected the address
 ```
 
+For prod integrations the `is_verified()` API collapses these into a simple bool: **`LIKELY` is treated as YES** (mail goes somewhere) and **`LIKELY_NO` is treated as NO** (disposable = not real identity). See the [Library use](#library-use-integrating-into-another-project) section below.
+
 The verification chain is layered and short-circuiting:
 
 ```
