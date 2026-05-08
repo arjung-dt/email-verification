@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 
 import typer
 from rich.console import Console
@@ -11,8 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from .providers import PROVIDERS
-from .verifier import Verdict, verify
+from .verifier import Verdict, api_keys_from_env, verify
 
 
 _STYLE = {
@@ -21,16 +19,6 @@ _STYLE = {
     "likely_no": "bold yellow",
     "no": "bold red",
 }
-
-
-def _collect_api_keys() -> dict[str, str]:
-    """Pull every configured provider key from env vars."""
-    keys: dict[str, str] = {}
-    for provider_id, _fn, env_var, _quota, _reset in PROVIDERS:
-        val = os.environ.get(env_var)
-        if val:
-            keys[provider_id] = val
-    return keys
 
 
 def check_command(
@@ -50,7 +38,7 @@ def check_command(
     if verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
 
-    api_keys = _collect_api_keys()
+    api_keys = api_keys_from_env()
     verdict = verify(email, api_keys=api_keys)
 
     if json_only:

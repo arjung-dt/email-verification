@@ -7,7 +7,7 @@ import pytest
 
 from email_verifier import verifier
 from email_verifier.providers import ProviderReading
-from email_verifier.verifier import Verdict, verify
+from email_verifier.verifier import Verdict, api_keys_from_env, is_verified, verify
 
 
 # ---------------------------------------------------------------------------
@@ -273,3 +273,82 @@ class TestLookupMx:
         monkeypatch.setattr(verifier.dns.resolver, "resolve", _resolve)
         result = verifier.lookup_mx("test.com")
         assert result == ["mx-primary.test", "mx-mid.test", "mx-secondary.test"]
+
+
+# ---------------------------------------------------------------------------
+# is_verified() — the simple integration API
+# ---------------------------------------------------------------------------
+
+class TestIsVerified:
+    """Maps Verdict outcomes to a clean True/False for prod integrations."""
+
+    def test_yes_returns_true(self, monkeypatch):
+        _patch_mx(monkeypatch, ["mx.test"])
+        _patch_chain(monkeypatch, [_r("qev", "valid", catch_all=False)])
+        assert is_verified("u@test.com", api_keys={"qev": "k"}) is True
+
+    def test_likely_catch_all_returns_true(self, monkeypatch):
+        # likely from a provider (catch-all) — mail goes somewhere → verified
+        _patch_mx(monkeypatch, ["mx.test"])
+        _patch_chain(monkeypatch, [_r("qev", "valid", catch_all=True)])
+        assert is_verified("u@test.com", api_keys={"qev": "k"}) is True
+
+    def test_likely_no_disposable_returns_false(self, monkeypatch):
+        _patch_mx(monkeypatch, ["mx.mailinator.com"])
+        _patch_chain(monkeypatch, [_r("qev", "valid", catch_all=False)])
+        assert is_verified("anything@mailinator.com", api_keys={"qev": "k"}) is False
+
+    def test_no_invalid_returns_false(self, monkeypatch):
+        _patch_mx(monkeypatch, ["mx.test"])
+        _patch_chain(monkeypatch, [_r("qev", "invalid")])
+        assert is_verified("fake@test.com", api_keys={"qev": "k"}) is False
+
+    def test_no_mx_returns_false(self, monkeypatch):
+        _patch_mx(monkeypatch, [])
+        assert is_verified("u@nope.test", api_keys={"qev": "k"}) is False
+
+    def test_malformed_returns_false(self, monkeypatch):
+        _patch_mx(monkeypatch, [])
+        assert is_verified("not-an-email", api_keys={"qev": "k"}) is False
+
+    def test_fallback_likely_returns_false(self, monkeypatch):
+        # likely from fallback path (no providers configured) — we couldn't
+        # actually verify, so this is FALSE despite the "likely" verdict.
+        _patch_mx(monkeypatch, ["mx.test"])
+        _patch_chain(monkeypatch, [])  # no provider readings
+        assert is_verified("u@test.com", api_keys={}) is False
+
+    def test_fallback_likely_with_unknown_providers_returns_false(self, monkeypatch):
+        # All providers returned unknown / errored — verdict is "likely" via
+        # fallback, not a real verification → False
+        _patch_mx(monkeypatch, ["mx.test"])
+        _patch_chain(monkeypatch, [_r("qev", "unknown"), _r("mev", "error", error="timeout")])
+        assert is_verified("u@test.com", api_keys={"qev": "k", "mev": "k"}) is False
+
+    def test_loads_keys_from_env_when_not_passed(self, monkeypatch):
+        monkeypatch.setenv("QEV_API_KEY", "from-env")
+        _patch_mx(monkeypatch, ["mx.test"])
+
+        captured: list[dict] = []
+
+        def _chain(email, *, api_keys):
+            captured.append(api_keys)
+            return [_r("qev", "valid", catch_all=False)]
+
+        monkeypatch.setattr(verifier, "run_chain", _chain)
+
+        assert is_verified("u@test.com") is True  # no api_keys arg
+        assert captured[0] == {"qev": "from-env"}
+
+
+def test_api_keys_from_env_returns_only_configured(monkeypatch):
+    monkeypatch.delenv("QEV_API_KEY", raising=False)
+    monkeypatch.delenv("MEV_API_KEY", raising=False)
+    monkeypatch.delenv("ABSTRACT_API_KEY", raising=False)
+    monkeypatch.delenv("MAILBOXLAYER_API_KEY", raising=False)
+    monkeypatch.delenv("HUNTER_API_KEY", raising=False)
+    monkeypatch.setenv("QEV_API_KEY", "abc")
+    monkeypatch.setenv("HUNTER_API_KEY", "xyz")
+
+    keys = api_keys_from_env()
+    assert keys == {"qev": "abc", "hunter": "xyz"}

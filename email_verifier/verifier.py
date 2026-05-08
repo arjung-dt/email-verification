@@ -17,6 +17,7 @@ whose key isn't set, so partial configurations are valid.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -33,6 +34,17 @@ from .providers import (
 
 DNS_LIFETIME = 5.0
 log = logging.getLogger(__name__)
+
+
+# Outcomes that count as "verified" for the simple boolean integration API.
+# - "yes":    a provider confirmed the specific mailbox accepts mail.
+# - "likely": a provider confirmed the address is acceptable but the server is
+#             catch-all (mail will arrive at *some* mailbox at that domain).
+# Everything else (likely_no = disposable, no = invalid/no MX, or a "likely"
+# that came from the fallback path because no provider was configured) is
+# explicitly NOT counted as verified.
+_VERIFIED_EXISTS = frozenset({"yes", "likely"})
+_FALLBACK_DECISION = "fallback"
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +113,53 @@ def lookup_mx(domain: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Public integration API
+# ---------------------------------------------------------------------------
+
+def api_keys_from_env() -> dict[str, str]:
+    """Convenience: collect all configured provider keys from environment.
+
+    Each provider's key is read from its declared env var (see PROVIDERS).
+    Missing keys are simply absent from the result.
+    """
+    keys: dict[str, str] = {}
+    for provider_id, _fn, env_var, _quota, _reset in PROVIDERS:
+        val = os.environ.get(env_var)
+        if val:
+            keys[provider_id] = val
+    return keys
+
+
+def is_verified(
+    email: str,
+    *,
+    api_keys: Optional[dict[str, str]] = None,
+) -> bool:
+    """Simple boolean integration API: True iff the email is verified.
+
+    Mapping:
+      - "yes"        → True   (mailbox confirmed by a provider)
+      - "likely"     → True   (catch-all domain — mail arrives somewhere)
+      - "likely_no"  → False  (disposable / throwaway provider)
+      - "no"         → False  (invalid syntax, no MX, or provider rejected)
+      - fallback     → False  (no providers configured / all providers errored)
+
+    If `api_keys` is omitted, the function reads them from environment
+    variables (QEV_API_KEY, MEV_API_KEY, ABSTRACT_API_KEY,
+    MAILBOXLAYER_API_KEY, HUNTER_API_KEY).
+
+    For the full structured result (provider trail, reasons, MX records, etc.)
+    use `verify()` directly.
+    """
+    if api_keys is None:
+        api_keys = api_keys_from_env()
+    verdict = verify(email, api_keys=api_keys)
+    if verdict.decided_by == _FALLBACK_DECISION:
+        return False
+    return verdict.exists in _VERIFIED_EXISTS
+
 
 def verify(
     email: str,

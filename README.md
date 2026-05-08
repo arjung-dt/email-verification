@@ -122,23 +122,29 @@ Practical handling for KYC / signup flows:
 2. Treat `likely` as "passed but flag for human review."
 3. Trust it (mail will be delivered).
 
-## Library use
+## Library use (integrating into another project)
+
+The simple boolean interface — recommended for production integrations:
 
 ```python
-import os
-from email_verifier.verifier import verify
+from email_verifier import is_verified
 
-v = verify(
-    "officer@bigbank.com",
-    api_keys={
-        "qev":          os.environ.get("QEV_API_KEY"),
-        "mev":          os.environ.get("MEV_API_KEY"),
-        "abstract":     os.environ.get("ABSTRACT_API_KEY"),
-        "mailboxlayer": os.environ.get("MAILBOXLAYER_API_KEY"),
-        "hunter":       os.environ.get("HUNTER_API_KEY"),
-    },
-)
+if is_verified("user@example.com"):
+    # mailbox is real (or catch-all) — accept
+    create_account(...)
+else:
+    # disposable / malformed / rejected / not verifiable — reject
+    return error("Please use a valid email address.")
+```
 
+API keys are read from environment variables automatically. For the full structured result (per-provider trail, reasons, MX records, etc.) use `verify()` directly.
+
+**See [INTEGRATION.md](./INTEGRATION.md) for full integration patterns** — signup flows, async, batch, error handling, caching, and security notes.
+
+```python
+from email_verifier import verify, api_keys_from_env
+
+v = verify("officer@bigbank.com", api_keys=api_keys_from_env())
 print(v.exists, "decided by", v.decided_by)
 print(v.reason)
 for r in v.provider_readings:
