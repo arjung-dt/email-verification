@@ -137,6 +137,18 @@ else:
     return error("Please use a valid email address.")
 ```
 
+### How verdicts map to the boolean
+
+`is_verified()` collapses the four-state verdict into a clean True/False:
+
+| Internal verdict | `is_verified()` returns | Why |
+|---|---|---|
+| `yes` (mailbox confirmed) | **True** | Provider directly confirmed the address |
+| `likely` (catch-all) | **True** | Domain accepts everything → mail will arrive at *some* mailbox there, so we treat catch-all as verified |
+| `likely_no` (disposable) | **False** | Throwaway providers (mailinator, 10minutemail, etc.) — converted to "not verified" |
+| `no` (invalid / no MX / explicit reject) | **False** | Mail can't be delivered |
+| `likely` from fallback (no providers configured) | **False** | We couldn't actually verify — defensive default |
+
 API keys are read from environment variables automatically. For the full structured result (per-provider trail, reasons, MX records, etc.) use `verify()` directly.
 
 **See [INTEGRATION.md](./INTEGRATION.md) for full integration patterns** — signup flows, async, batch, error handling, caching, and security notes.
