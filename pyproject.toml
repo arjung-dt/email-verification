@@ -1,0 +1,30 @@
+[project]
+name = "email-verifier"
+version = "0.1.0"
+description = "Standalone CLI: does this email exist? Combines DNS MX records with Hunter.io SMTP probe."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dnspython>=2.6",
+    "httpx>=0.28",
+    "typer>=0.25",
+    "rich>=15.0",
+]
+
+[project.scripts]
+email-verify = "email_verifier.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
